@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"image/png"
 	"log"
 	"os"
 	"strings"
@@ -102,9 +101,7 @@ func (p WrappedProcess) DumpMem() (memoryScan chan []byte, err error) {
 var (
 	screenWidth  = 0
 	screenHeight = 0
-	dump         = []byte{}
 )
-
 
 type Game struct {
 	dump []byte
@@ -178,18 +175,7 @@ func main() {
 			}
 			g.dump = append(g.dump, clrs...)
 		}
-		out := ebiten.NewImage(screenWidth, len(g.dump)/4/screenWidth)
-		
-		out.ReplacePixels(g.dump)
-
-		f, err := os.Open(os.Args[1] + ".png")
-		if err != nil {
-			fmt.Println("Error opening file")
-			return
-		}
-		png.Encode(f, out)
-		f.Close()
-		os.Exit(0)
+		// TODO make an image of the dump
 	}(mem, g)
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Memory Viewer")
