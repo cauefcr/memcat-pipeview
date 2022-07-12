@@ -1,4 +1,4 @@
-module memview
+module memscroll
 
 go 1.18
 
