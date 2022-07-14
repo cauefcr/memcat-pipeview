@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"image/png"
 	"log"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -82,12 +84,17 @@ func (p WrappedProcess) DumpMem() (memoryScan chan []byte, err error) {
 	memoryScan = make(chan []byte, 1000)
 	var last uintptr = 0
 	go func() {
-		err = muxErr(memaccess.WalkMemory(p, last, 4096, func(addr uintptr, buf []byte) bool {
+		count := 0
+		err = muxErr(memaccess.WalkMemory(p, last, 4096<<2, func(addr uintptr, buf []byte) bool {
 			if len(buf) == 0 || last == addr {
 				return false
 			}
 			last = addr
 			memoryScan <- append([]byte{}, buf...)
+			count++
+			if count%1000 == 0 {
+				fmt.Println(addr)
+			}
 			return true
 		}))
 		for len(memoryScan) > 0 {
@@ -139,7 +146,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	names, pids := availableProgs(true)
+	names, pids := availableProgs(false)
 	chosen := pids[len(pids)-1]
 	for i, name := range names {
 		if strings.Contains(name, os.Args[1]) {
@@ -176,6 +183,17 @@ func main() {
 			g.dump = append(g.dump, clrs...)
 		}
 		// TODO make an image of the dump
+		height := int(math.Ceil(float64(len(g.dump)/4)/float64(screenWidth)) * float64(screenWidth))
+		image := ebiten.NewImage(screenWidth, height)
+		g.dump = append(g.dump, make([]byte, height*screenWidth*4-len(g.dump))...)
+		image.ReplacePixels(g.dump)
+		f, err := os.Create(os.Args[1] + "_dump.png")
+		if err != nil {
+			fmt.Println("Error creating image")
+			return
+		}
+		defer f.Close()
+		err = png.Encode(f, image)
 	}(mem, g)
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Memory Viewer")
