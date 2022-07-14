@@ -10,6 +10,16 @@ import (
 	"github.com/mozilla/masche/process"
 )
 
+// TODO:
+// - Add a flag to dump memory in hex
+// - Add a flag to dump memory in ascii
+// - Add a flag to dump memory in binary
+// - Add a flag to dump memory in a more human readable format,
+// 		like braile dots encoding of a byte
+// - Add a flag to dump memory in a more ordered representation of the memory location,
+// 		so as to be able to find the memory location of a given byte in the dump
+// - ???
+
 func check(e error) {
 	if e != nil {
 		panic(e)
@@ -83,9 +93,6 @@ func (p WrappedProcess) DumpMem() (memoryScan chan []byte, err error) {
 			last = addr
 			memoryScan <- append([]byte{}, buf...)
 			count++
-			// if count&0xfff == 0 {
-			// 	fmt.Printf("%x\n", addr)
-			// }
 			return true
 		}))
 		for len(memoryScan) > 0 {
