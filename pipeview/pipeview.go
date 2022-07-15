@@ -159,7 +159,7 @@ func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Memory Viewer")
 	ebiten.SetWindowPosition(0, 0)
-	ebiten.SetWindowResizable(true)
+	// ebiten.SetWindowResizable(true)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
