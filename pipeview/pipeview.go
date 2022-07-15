@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
-	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 )
 
 // TODO:
@@ -38,6 +37,7 @@ var (
 	screenWidth      = 0
 	screenHeight     = 0
 	numReads         = 0
+	scale            = 6
 )
 
 type Game struct {
@@ -45,6 +45,10 @@ type Game struct {
 }
 
 func (g *Game) Update() error {
+	area := (screenHeight / scale) * (screenWidth / scale) * 4
+	if height < len(g.dump)-area-screenWidth*4 {
+		height += stride
+	}
 	return nil
 }
 
@@ -73,19 +77,27 @@ func min(a, b int) int {
 	return b
 }
 
+func pad(a []byte, n int) []byte {
+	return append(a, make([]byte, n-len(a))...)
+}
+
+var scratchPad *ebiten.Image
+
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Clear()
-	if height > len(g.dump)-screenHeight*screenWidth*4 {
-		screen.ReplacePixels(append(g.dump[height:], make([]byte, screenHeight*screenWidth*4-len(g.dump[height:]))...))
+	area := (screenHeight / scale) * (screenWidth / scale) * 4
+	dumpArea := len(g.dump)
+	if height > dumpArea-area {
+		scratchPad.ReplacePixels(pad(g.dump[height:], area))
 	} else {
-		screen.ReplacePixels(g.dump[height : height+screenHeight*screenWidth*4])
+		scratchPad.ReplacePixels(g.dump[height : height+area])
 	}
-	// }
-	if height < len(g.dump)-stride*screenHeight/2 {
-		height += stride * 8
-	}
+	opt := &ebiten.DrawImageOptions{}
+	opt.GeoM.Translate(-float64(screenWidth/scale/2), -float64(screenHeight/scale/2))
+	opt.GeoM.Scale(float64(scale), float64(scale))
+	opt.GeoM.Translate(float64(screenWidth/2), float64(screenHeight/2))
 
-	ebitenutil.DebugPrint(screen, fmt.Sprintf("TPS: %0.2f\nFPS: %0.2f", ebiten.CurrentTPS(), ebiten.CurrentFPS()))
+	screen.DrawImage(scratchPad, opt)
 }
 
 func (g *Game) Layout(outsideWidth int, outsideHeight int) (int, int) {
@@ -94,9 +106,13 @@ func (g *Game) Layout(outsideWidth int, outsideHeight int) (int, int) {
 
 func main() {
 	screenWidth, screenHeight = ebiten.ScreenSizeInFullscreen()
+	side := min(screenWidth, screenHeight) / 2
+	screenWidth = side
+	screenHeight = side
+	scratchPad = ebiten.NewImage(screenWidth/scale, screenHeight/scale)
 	stride = 4 * screenWidth
 	g := &Game{
-		dump: make([]byte, screenHeight*screenWidth*4),
+		dump: make([]byte, (screenHeight/scale)*(screenWidth/scale)*4),
 	}
 	data := make([]byte, 4096)
 	bufIO := bufio.NewReader(os.Stdin)
@@ -117,13 +133,15 @@ func main() {
 			}
 			g.dump = append(g.dump, clrs...)
 		}
-		side := int(math.Ceil(math.Sqrt(float64((len(g.dump) - screenHeight*screenWidth*4) / 4))))
-		bounds := image.Rect(0, 0, side, side)
+		side := int(math.Ceil(math.Sqrt(float64((len(g.dump) - (screenHeight/scale)*(screenWidth/scale)*4) / 4))))
+		side = int(math.Exp2(math.Ceil(math.Log2(float64(side)))))
+		length := int(math.Ceil((float64(len(g.dump)-(screenHeight/scale)*(screenWidth/scale)*4) / 4) / float64(side)))
+		bounds := image.Rect(0, 0, side, length)
 		img := image.NewRGBA(bounds)
 		pad := func(a []byte, n int) []byte {
 			return append(a, make([]byte, n-len(a))...)
 		}
-		img.Pix = pad(g.dump[screenHeight*screenWidth*4:], side*side*4)
+		img.Pix = pad(g.dump[(screenHeight/scale)*(screenWidth/scale)*4:], length*side*4)
 		f, err := os.Create(strconv.FormatInt((time.Now().Unix()), 10) + "_pipeview.png")
 		if err != nil {
 			fmt.Println("Error creating image", err)
@@ -136,11 +154,12 @@ func main() {
 			fmt.Println("Error encoding image", err)
 			return
 		}
-		os.Exit(0)
+		// os.Exit(0)
 	}(bufIO)
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Memory Viewer")
-	ebiten.SetFullscreen(true)
+	ebiten.SetWindowPosition(0, 0)
+	ebiten.SetWindowResizable(true)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
