@@ -3,12 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"image"
-	"image/png"
 	"log"
 	"math"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -37,22 +34,42 @@ var (
 	screenWidth      = 0
 	screenHeight     = 0
 	numReads         = 0
-	scale            = 6
+	scale            = 4
 )
 
 type Game struct {
-	dump []byte
+	dump       []byte
+	height     int
+	count      int
+	vx, vy     float64
+	scratchPad [3]struct {
+		img  *ebiten.Image
+		opt  *ebiten.DrawImageOptions
+		x, y float64
+	}
 }
 
 func (g *Game) Update() error {
-	area := (screenHeight / scale) * (screenWidth / scale) * 4
-	if height < len(g.dump)-area-screenWidth*4 {
-		height += stride
+	if g.height == 0 {
+		if err := g.InitFrames(); err != nil {
+			return err
+		}
+	}
+	// return nil
+	for i := 0; i < 3; i++ {
+		g.scratchPad[i].y -= g.vy / ebiten.DefaultTPS
+		g.scratchPad[i].x -= g.vx / ebiten.DefaultTPS
+		if g.scratchPad[i].y+float64(g.scratchPad[i].img.Bounds().Dy()) < 0 {
+			// g.count = i
+			g.scratchPad[i].y += float64(2 * g.scratchPad[i].img.Bounds().Dy())
+			g.scratchPad[i].img.ReplacePixels(
+				g.dump[g.height : g.height+g.scratchPad[i].img.Bounds().Dx()*g.scratchPad[i].img.Bounds().Dy()*4],
+			)
+			g.height += g.scratchPad[i].img.Bounds().Dx() * g.scratchPad[i].img.Bounds().Dy() * 4
+		}
 	}
 	return nil
 }
-
-var height = int(0)
 
 func clamp(val, min, max int) int {
 	if val < min {
@@ -81,23 +98,37 @@ func pad(a []byte, n int) []byte {
 	return append(a, make([]byte, n-len(a))...)
 }
 
-var scratchPad *ebiten.Image
-
 func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Clear()
-	area := (screenHeight / scale) * (screenWidth / scale) * 4
-	dumpArea := len(g.dump)
-	if height > dumpArea-area {
-		scratchPad.ReplacePixels(pad(g.dump[height:], area))
-	} else {
-		scratchPad.ReplacePixels(g.dump[height : height+area])
+	// count := g.count
+	// renderFrames := func(num int) {
+	for num := 0; num < 3; num++ {
+		// if num == count {
+		// 	continue
+		// }
+		g.scratchPad[num].opt = &ebiten.DrawImageOptions{}
+		// g.scratchPad[num].opt.GeoM.Translate(-float64(screenWidth/scale/2), -float64(screenHeight/scale/2))
+		g.scratchPad[num].opt.GeoM.Scale(float64(scale), float64(scale))
+		g.scratchPad[num].opt.GeoM.Translate(g.scratchPad[num].x*float64(scale), g.scratchPad[num].y*float64(scale))
+		screen.DrawImage(g.scratchPad[num].img, g.scratchPad[num].opt)
 	}
-	opt := &ebiten.DrawImageOptions{}
-	opt.GeoM.Translate(-float64(screenWidth/scale/2), -float64(screenHeight/scale/2))
-	opt.GeoM.Scale(float64(scale), float64(scale))
-	opt.GeoM.Translate(float64(screenWidth/2), float64(screenHeight/2))
+	// ebitenutil.DebugPrint(screen, fmt.Sprintf("FPS: %0.2f, %s", ebiten.CurrentFPS(), fmt.Sprint(g.scratchPad[0].img.RGBA64At(10, 10))))
+}
 
-	screen.DrawImage(scratchPad, opt)
+func (g *Game) InitFrames() error {
+	for i := 0; i < 3; i++ {
+		fmt.Println("initializing frame", i)
+		for len(g.dump) < i*g.height+g.scratchPad[i].img.Bounds().Dx()*g.scratchPad[i].img.Bounds().Dy()*4 {
+			fmt.Println("waiting for dump")
+			time.Sleep(time.Millisecond * 10)
+		}
+		g.scratchPad[i].y = float64(i * g.scratchPad[i].img.Bounds().Dy())
+		g.scratchPad[i].img.ReplacePixels(
+			g.dump[g.height : g.height+g.scratchPad[i].img.Bounds().Dx()*g.scratchPad[i].img.Bounds().Dy()*4],
+		)
+		g.height += g.scratchPad[i].img.Bounds().Dx() * g.scratchPad[i].img.Bounds().Dy() * 4
+	}
+	return nil
 }
 
 func (g *Game) Layout(outsideWidth int, outsideHeight int) (int, int) {
@@ -106,13 +137,22 @@ func (g *Game) Layout(outsideWidth int, outsideHeight int) (int, int) {
 
 func main() {
 	screenWidth, screenHeight = ebiten.ScreenSizeInFullscreen()
-	side := min(screenWidth, screenHeight) / 2
+	side := RoundToLowerPowerOfTwo(min(screenWidth, screenHeight))
 	screenWidth = side
-	screenHeight = side
-	scratchPad = ebiten.NewImage(screenWidth/scale, screenHeight/scale)
+	// screenHeight = side
 	stride = 4 * screenWidth
 	g := &Game{
-		dump: make([]byte, (screenHeight/scale)*(screenWidth/scale)*4),
+		dump:  make([]byte, (screenHeight/scale)*(screenWidth/scale)*4),
+		vx:    0,
+		vy:    math.Exp2(float64(scale * 2)),
+		count: 3,
+	}
+	for i := 0; i < 3; i++ {
+		g.scratchPad[i].img = ebiten.NewImage(screenWidth/scale, screenHeight/scale)
+		g.scratchPad[i].opt = &ebiten.DrawImageOptions{}
+		g.scratchPad[i].opt.GeoM.Translate(-float64(screenWidth/scale/2), -float64(screenHeight/scale/2))
+		g.scratchPad[i].opt.GeoM.Scale(float64(scale), float64(scale))
+		g.scratchPad[i].opt.GeoM.Translate(float64(screenWidth/2), float64(screenHeight/2))
 	}
 	data := make([]byte, 4096)
 	bufIO := bufio.NewReader(os.Stdin)
@@ -133,34 +173,39 @@ func main() {
 			}
 			g.dump = append(g.dump, clrs...)
 		}
-		side := int(math.Ceil(math.Sqrt(float64((len(g.dump) - (screenHeight/scale)*(screenWidth/scale)*4) / 4))))
-		side = int(math.Exp2(math.Trunc(math.Log2(float64(side)))))
-		length := int(math.Ceil((float64(len(g.dump)-(screenHeight/scale)*(screenWidth/scale)*4) / 4) / float64(side)))
-		bounds := image.Rect(0, 0, side, length)
-		img := image.NewRGBA(bounds)
-		pad := func(a []byte, n int) []byte {
-			return append(a, make([]byte, n-len(a))...)
-		}
-		img.Pix = pad(g.dump[(screenHeight/scale)*(screenWidth/scale)*4:], length*side*4)
-		f, err := os.Create(strconv.FormatInt((time.Now().Unix()), 10) + "_pipeview.png")
-		if err != nil {
-			fmt.Println("Error creating image", err)
-			return
-		}
-		defer f.Close()
+		// time.Sleep(time.Second)
+		// side := int(math.Ceil(math.Sqrt(float64((len(g.dump) - (screenHeight/scale)*(screenWidth/scale)*4) / 4))))
+		// side = RoundToLowerPowerOfTwo(side)
+		// length := int(math.Ceil((float64(len(g.dump)-(screenHeight/scale)*(screenWidth/scale)*4) / 4) / float64(side)))
+		// bounds := image.Rect(0, 0, side, length)
+		// img := image.NewRGBA(bounds)
+		// pad := func(a []byte, n int) []byte {
+		// 	return append(a, make([]byte, n-len(a))...)
+		// }
+		// img.Pix = pad(g.dump[(screenHeight/scale)*(screenWidth/scale)*4:], length*side*4)
+		// f, err := os.Create(strconv.FormatInt((time.Now().Unix()), 10) + "_pipeview.png")
+		// if err != nil {
+		// 	fmt.Println("Error creating image", err)
+		// 	return
+		// }
+		// defer f.Close()
 
-		err = png.Encode(f, img)
-		if err != nil {
-			fmt.Println("Error encoding image", err)
-			return
-		}
+		// err = png.Encode(f, img)
+		// if err != nil {
+		// 	fmt.Println("Error encoding image", err)
+		// 	return
+		// }
 		// os.Exit(0)
 	}(bufIO)
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Memory Viewer")
 	ebiten.SetWindowPosition(0, 0)
-	// ebiten.SetWindowResizable(true)
+	ebiten.SetWindowResizable(true)
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func RoundToLowerPowerOfTwo(x int) int {
+	return int(math.Pow(2, math.Floor(math.Log2(float64(x)))))
 }
