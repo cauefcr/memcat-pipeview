@@ -134,7 +134,7 @@ func main() {
 			g.dump = append(g.dump, clrs...)
 		}
 		side := int(math.Ceil(math.Sqrt(float64((len(g.dump) - (screenHeight/scale)*(screenWidth/scale)*4) / 4))))
-		side = int(math.Exp2(math.Ceil(math.Log2(float64(side)))))
+		side = int(math.Exp2(math.Trunc(math.Log2(float64(side)))))
 		length := int(math.Ceil((float64(len(g.dump)-(screenHeight/scale)*(screenWidth/scale)*4) / 4) / float64(side)))
 		bounds := image.Rect(0, 0, side, length)
 		img := image.NewRGBA(bounds)
